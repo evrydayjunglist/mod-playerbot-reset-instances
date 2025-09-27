@@ -55,21 +55,25 @@ void GossipSetText(Player* player, std::string message, uint32 textID)
         }
 
         std::string introText;
-	std::string answerText;
+        std::string answerText;
+        std::string boostAnswerText;
 
         introText = "Time is a spiral. Care to rewind your fate?";
-	answerText = "Please unravel the threads of fate.";
+        answerText = "Please unravel the threads of fate.";
+        boostAnswerText = "Please elevate the fate of my companions.";
 
-	// GossipItem -> Answer
+        // GossipItem -> Answer
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, answerText, GOSSIP_SENDER_MAIN, 1);
-	// Intro message from NPC
-	GossipSetText(player, introText, DEFAULT_GOSSIP_MESSAGE);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, boostAnswerText, GOSSIP_SENDER_MAIN, 2);
+        // Intro message from NPC
+        GossipSetText(player, introText, DEFAULT_GOSSIP_MESSAGE);
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
         return true;
     }
 
     bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
     {
+        // Instance reset choice
         if (action == 1)
         {
             if (sConfigMgr->GetOption<bool>("Chronomancer.EnableGoldCost", true))
@@ -95,21 +99,21 @@ void GossipSetText(Player* player, std::string message, uint32 textID)
             creature->HandleEmoteCommand(EMOTE_ONESHOT_SPELL_CAST_OMNI);
 
             // Reset instance bindings for the main player (both non-raid and raid)
-	uint32 diff = MAX_DIFFICULTY;
-        for (uint8 i = 0; i < diff; ++i)
-        {
-            BoundInstancesMap const& m_boundInstances = sInstanceSaveMgr->PlayerGetBoundInstances(player->GetGUID(), Difficulty(i));
-            for (BoundInstancesMap::const_iterator itr = m_boundInstances.begin(); itr != m_boundInstances.end();)
+            uint32 diff = MAX_DIFFICULTY;
+            for (uint8 i = 0; i < diff; ++i)
             {
-                if (itr->first != player->GetMapId())
+                BoundInstancesMap const& m_boundInstances = sInstanceSaveMgr->PlayerGetBoundInstances(player->GetGUID(), Difficulty(i));
+                for (BoundInstancesMap::const_iterator itr = m_boundInstances.begin(); itr != m_boundInstances.end();)
                 {
-                    sInstanceSaveMgr->PlayerUnbindInstance(player->GetGUID(), itr->first, Difficulty(i), true, player);
-                    itr = m_boundInstances.begin();
+                    if (itr->first != player->GetMapId())
+                    {
+                        sInstanceSaveMgr->PlayerUnbindInstance(player->GetGUID(), itr->first, Difficulty(i), true, player);
+                        itr = m_boundInstances.begin();
+                    }
+                    else
+                        ++itr;
                 }
-                else
-                    ++itr;
             }
-        }
 
 
             // Also reset instance bindings for all playerbots in the player's group
@@ -122,31 +126,65 @@ void GossipSetText(Player* player, std::string message, uint32 textID)
                         continue;
 
 
-        		for (uint8 i = 0; i < diff; ++i)
-        		{
-            		BoundInstancesMap const& m_boundInstances = sInstanceSaveMgr->PlayerGetBoundInstances(member->GetGUID(), Difficulty(i));
-            		for (BoundInstancesMap::const_iterator itr = m_boundInstances.begin(); itr != m_boundInstances.end();)
-            		{
-                		if (itr->first != member->GetMapId())
-                		{
-                    			sInstanceSaveMgr->PlayerUnbindInstance(member->GetGUID(), itr->first, Difficulty(i), true, member);
-                    			itr = m_boundInstances.begin();
-                		}
-                		else
-                    			++itr;
-            		}
-        		}			
-                        char botMsg[256];
-                        snprintf(botMsg, sizeof(botMsg), "%s's timeline has also been reset.", member->GetName().c_str());
-                        ChatHandler(player->GetSession()).SendSysMessage(botMsg);
-                    
+                    for (uint8 i = 0; i < diff; ++i)
+                    {
+                        BoundInstancesMap const& m_boundInstances = sInstanceSaveMgr->PlayerGetBoundInstances(member->GetGUID(), Difficulty(i));
+                        for (BoundInstancesMap::const_iterator itr = m_boundInstances.begin(); itr != m_boundInstances.end();)
+                        {
+                            if (itr->first != member->GetMapId())
+                            {
+                                sInstanceSaveMgr->PlayerUnbindInstance(member->GetGUID(), itr->first, Difficulty(i), true, member);
+                                itr = m_boundInstances.begin();
+                            }
+                            else
+                                ++itr;
+                        }
+                    }
+                    char botMsg[256];
+                    snprintf(botMsg, sizeof(botMsg), "%s's timeline has also been reset.", member->GetName().c_str());
+                    ChatHandler(player->GetSession()).SendSysMessage(botMsg);
                 }
             }
-
-
             ChatHandler(player->GetSession()).SendSysMessage("Your timeline has been reset.");
         }
+        // PlayerBot boost
+        else if (action == 2)
+        {
+            uint32 goldCost = sConfigMgr->GetOption<uint32>("Chronomancer.BotBoostCostAmount", 1000);
+            uint32 costInCopper = goldCost * 10000;
 
+            // Iterate bot by bot if any
+            if (Group* group = player->GetGroup())
+            {
+                for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
+                {
+                    Player* member = itr->GetSource();
+                    if (!member || member == player)
+                        continue;
+
+                    if (member->getLevel() >= 80)
+                        continue;
+
+                    // OK, we've got a playerbot, and not level 80, proceed.
+
+                    // No need to go further if we're broke...
+                    if (player->GetMoney() < costInCopper)
+                    {
+                        creature->Say("Time magic isn't free. Come back with more gold, friend.", LANG_UNIVERSAL);
+                        CloseGossipMenuFor(player);
+                        return true;
+                    }
+
+                    member->GiveLevel(80);
+                    player->ModifyMoney(-static_cast<int32>(costInCopper));
+                    char botMsg[256];
+                    snprintf(botMsg, sizeof(botMsg), "%s's fate has been augmented.", member->GetName().c_str());
+                    ChatHandler(player->GetSession()).SendSysMessage(botMsg);
+                }
+            }
+            ChatHandler(player->GetSession()).SendSysMessage("The timelines have been altered.");
+        }
+        // End dialog actions
         CloseGossipMenuFor(player);
         return true;
     }
