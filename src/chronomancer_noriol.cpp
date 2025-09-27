@@ -26,25 +26,25 @@ public:
         return new chronomancer_noriolAI(creature);
     }
 
-void GossipSetText(Player* player, std::string message, uint32 textID)
-{
-    WorldPacket data(SMSG_NPC_TEXT_UPDATE, 100);
-    data << textID;
-    for (uint8 i = 0; i < MAX_GOSSIP_TEXT_OPTIONS; ++i)
+    void GossipSetText(Player* player, std::string message, uint32 textID)
     {
-        data << float(0);
-        data << message;
-        data << message;
-        data << uint32(0);
-        data << uint32(0);
-        data << uint32(0);
-        data << uint32(0);
-        data << uint32(0);
-        data << uint32(0);
-        data << uint32(0);
+        WorldPacket data(SMSG_NPC_TEXT_UPDATE, 100);
+        data << textID;
+        for (uint8 i = 0; i < MAX_GOSSIP_TEXT_OPTIONS; ++i)
+        {
+            data << float(0);
+            data << message;
+            data << message;
+            data << uint32(0);
+            data << uint32(0);
+            data << uint32(0);
+            data << uint32(0);
+            data << uint32(0);
+            data << uint32(0);
+            data << uint32(0);
+        }
+        player->GetSession()->SendPacket(&data);
     }
-    player->GetSession()->SendPacket(&data);
-}
 
     bool OnGossipHello(Player* player, Creature* creature) override
     {
@@ -57,14 +57,20 @@ void GossipSetText(Player* player, std::string message, uint32 textID)
         std::string introText;
         std::string answerText;
         std::string boostAnswerText;
+        std::string skipOutlandAnswerText;
 
         introText = "Time is a spiral. Care to rewind your fate?";
         answerText = "Please unravel the threads of fate.";
         boostAnswerText = "Please elevate the fate of my companions.";
+        skipOutlandAnswerText = "I want to assist in the Northrend campaign immediately.";
 
         // GossipItem -> Answer
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, answerText, GOSSIP_SENDER_MAIN, 1);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, boostAnswerText, GOSSIP_SENDER_MAIN, 2);
+        if (player->GetLevel() == 58)
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, skipOutlandAnswerText, GOSSIP_SENDER_MAIN, 3);
+        }
         // Intro message from NPC
         GossipSetText(player, introText, DEFAULT_GOSSIP_MESSAGE);
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
@@ -184,6 +190,39 @@ void GossipSetText(Player* player, std::string message, uint32 textID)
             }
             ChatHandler(player->GetSession()).SendSysMessage("The timelines have been altered.");
         }
+        // Outland boost
+        else if (action == 3)
+        {
+            if (player->GetLevel() != 58)
+            {
+                creature->Say("Your timeline no longer allows this jump.", LANG_UNIVERSAL);
+                CloseGossipMenuFor(player);
+                return true;
+            }
+
+            uint32 goldCost = sConfigMgr->GetOption<uint32>("Chronomancer.SkipOutlandCostAmount", 5000);
+            uint32 costInCopper = goldCost * 10000;
+
+            if (player->GetMoney() < costInCopper)
+            {
+                creature->Say("Time magic isn't free. Come back with more gold, friend.", LANG_UNIVERSAL);
+                CloseGossipMenuFor(player);
+                return true;
+            }
+
+            player->ModifyMoney(-static_cast<int32>(costInCopper));
+            player->GiveLevel(68); // Boost player to 68
+            player->SendTalentsInfoData(false); // Optional: refresh UI
+            player->UpdateSkillsToMaxSkillsForLevel(); // Optional: cap skills
+            player->SetFullHealth(); // Just in case
+            player->SetPower(POWER_MANA, player->GetMaxPower(POWER_MANA));
+
+            char msg[256];
+            snprintf(msg, sizeof(msg), "You pay %u gold to alter the threads of your fate.", goldCost);
+            ChatHandler(player->GetSession()).SendSysMessage(msg);
+            creature->Say("Your fate has been fast-forwarded.", LANG_UNIVERSAL);
+        }
+
         // End dialog actions
         CloseGossipMenuFor(player);
         return true;
