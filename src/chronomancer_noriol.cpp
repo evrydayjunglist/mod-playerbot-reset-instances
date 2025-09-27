@@ -58,19 +58,26 @@ public:
         std::string answerText;
         std::string boostAnswerText;
         std::string skipOutlandAnswerText;
+        std::string descriptionAnswerText;
 
         introText = "Time is a spiral. Care to rewind your fate?";
         answerText = "Please unravel the threads of fate.";
         boostAnswerText = "Please elevate the fate of my companions.";
         skipOutlandAnswerText = "I want to assist in the Northrend campaign immediately.";
+        descriptionAnswerText = "Could you explain to me your purpose?";
 
-        // GossipItem -> Answer
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, answerText, GOSSIP_SENDER_MAIN, 1);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, boostAnswerText, GOSSIP_SENDER_MAIN, 2);
+        // Safeguard Instance-reset and Playerbot-boosts at 80 to prevent early exploits.
+        if (player->GetLevel() == 80)
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, answerText, GOSSIP_SENDER_MAIN, 1);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, boostAnswerText, GOSSIP_SENDER_MAIN, 2);
+        }
+        // Outland-skip is only available during level 58.
         if (player->GetLevel() == 58)
         {
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, skipOutlandAnswerText, GOSSIP_SENDER_MAIN, 3);
         }
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, descriptionAnswerText, GOSSIP_SENDER_MAIN, 4);
         // Intro message from NPC
         GossipSetText(player, introText, DEFAULT_GOSSIP_MESSAGE);
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
@@ -222,7 +229,18 @@ public:
             ChatHandler(player->GetSession()).SendSysMessage(msg);
             creature->Say("Your fate has been fast-forwarded.", LANG_UNIVERSAL);
         }
+        else if (action == 4)
+        {
+            std::string loreText =
+                "Chronomancer Noriol gazes at you, eyes reflecting infinite timelines.\n\n"
+                "“I offer more than magic. I offer freedom from repetition, shortcuts through weariness, and a chance to rewrite what once was. "
+                "Whether to reset what you’ve done, lift your allies, or leap past the desolate lands of Outland... "
+                "All I ask is a modest fee — and the will to defy time.”";
 
+            GossipSetText(player, loreText, DEFAULT_GOSSIP_MESSAGE);
+            SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
+            return true;
+        }
         // End dialog actions
         CloseGossipMenuFor(player);
         return true;
