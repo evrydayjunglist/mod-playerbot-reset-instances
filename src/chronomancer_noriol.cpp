@@ -8,7 +8,7 @@
 #include "Creature.h"
 #include "Group.h"
 #include "PlayerbotAI.h"
-#include "PlayerbotMgr.h";
+#include "PlayerbotMgr.h"
 
 class chronomancer_noriol : public CreatureScript
 {
@@ -162,7 +162,7 @@ void GossipSetText(Player* player, std::string message, uint32 textID)
                     if (!member || member == player)
                         continue;
 
-                    if (member->getLevel() >= 80)
+                    if (member->GetLevel() >= 80)
                         continue;
 
                     // OK, we've got a playerbot, and not level 80, proceed.
