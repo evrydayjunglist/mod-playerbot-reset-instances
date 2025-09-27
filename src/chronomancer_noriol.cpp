@@ -9,6 +9,26 @@
 #include "Group.h"
 #include "PlayerbotAI.h"
 #include "PlayerbotMgr.h"
+#include "Playerbots.h"
+
+/**
+ * @brief Checks if the given player is a bot.
+ *
+ * This function checks if the provided Player pointer is valid and if it has an associated PlayerbotAI instance
+ * that indicates it is a bot. It returns true if the player is a bot, false otherwise.
+ *
+ * @param player Pointer to the Player object to check.
+ * @return true if the player is a bot, false otherwise.
+ */
+static bool IsPlayerBot(Player* player)
+{
+    if (!player)
+    {
+        return false;
+    }
+    PlayerbotAI* botAI = sPlayerbotsMgr->GetPlayerbotAI(player);
+    return botAI && botAI->IsBotAI();
+}
 
 class chronomancer_noriol : public CreatureScript
 {
@@ -70,8 +90,26 @@ public:
         if (player->GetLevel() == 80)
         {
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, answerText, GOSSIP_SENDER_MAIN, 1);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, boostAnswerText, GOSSIP_SENDER_MAIN, 2);
+
+            // Check if there's at least an eligible playerbot
+            bool hasEligibleBot = false;
+            if (Group* group = player->GetGroup())
+            {
+                for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
+                {
+                    Player* member = itr->GetSource();
+                    if (member && member != player && member->GetLevel() < 80 && IsPlayerBot(member))
+                    {
+                        hasEligibleBot = true;
+                        break;
+                    }
+                }
+            }
+
+            if (hasEligibleBot)
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, boostAnswerText, GOSSIP_SENDER_MAIN, 2);
         }
+
         // Outland-skip is only available during level 58.
         if (player->GetLevel() == 58)
         {
@@ -166,7 +204,8 @@ public:
             uint32 goldCost = sConfigMgr->GetOption<uint32>("Chronomancer.BotBoostCostAmount", 1000);
             uint32 costInCopper = goldCost * 10000;
 
-            // Iterate bot by bot if any
+            bool boosted = false;
+
             if (Group* group = player->GetGroup())
             {
                 for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
@@ -178,9 +217,9 @@ public:
                     if (member->GetLevel() >= 80)
                         continue;
 
-                    // OK, we've got a playerbot, and not level 80, proceed.
+                    if (!IsPlayerBot(member))
+                        continue;
 
-                    // No need to go further if we're broke...
                     if (player->GetMoney() < costInCopper)
                     {
                         creature->Say("Time magic isn't free. Come back with more gold, friend.", LANG_UNIVERSAL);
@@ -190,13 +229,23 @@ public:
 
                     member->GiveLevel(80);
                     player->ModifyMoney(-static_cast<int32>(costInCopper));
+                    boosted = true;
+
                     char botMsg[256];
                     snprintf(botMsg, sizeof(botMsg), "%s's fate has been augmented.", member->GetName().c_str());
                     ChatHandler(player->GetSession()).SendSysMessage(botMsg);
                 }
             }
-            ChatHandler(player->GetSession()).SendSysMessage("The timelines have been altered.");
+            if (boosted)
+            {
+                ChatHandler(player->GetSession()).SendSysMessage("The timelines have been altered.");
+            }
+            else
+            {
+                ChatHandler(player->GetSession()).SendSysMessage("No suitable companions found to augment.");
+            }
         }
+
         // Outland boost
         else if (action == 3)
         {
